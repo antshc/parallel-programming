@@ -1,4 +1,4 @@
-﻿using Dataflow.Play.App.Logger;
+﻿using Core.Logger;
 using Dataflow.Play.App.Models;
 
 namespace Dataflow.Play.App.ReceiptsReportPipeline.Blocks.Common;

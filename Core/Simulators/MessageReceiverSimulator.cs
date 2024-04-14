@@ -1,15 +1,15 @@
 ﻿using System.Timers;
 
-namespace Dataflow.Play.Simulators;
+namespace Core.Simulators;
 
-public class ReceiptCreationSimulator: IDisposable
+public class MessageReceiverSimulator : IDisposable
 {
     private System.Timers.Timer timer;
     private int interval; // in milliseconds
 
     public event EventHandler Elapsed;
 
-    public ReceiptCreationSimulator(int interval)
+    public MessageReceiverSimulator(int interval)
     {
         this.interval = interval;
         timer = new System.Timers.Timer(interval);
