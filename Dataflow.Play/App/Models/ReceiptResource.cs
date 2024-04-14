@@ -1,4 +1,4 @@
-﻿namespace Dataflow.Play.PaymentReceipts;
+﻿namespace Dataflow.Play.App.Models;
 
 public abstract record ReceiptResource(string Resource);
 

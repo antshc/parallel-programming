@@ -5,9 +5,9 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Threading.Tasks.Dataflow;
 
-namespace Dataflow.Play
+namespace Dataflow.Play.Sandbox
 {
-    public class DataflowBlocks
+    public class DataflowBlocksTests
     {
         [Fact]
         public void TransformManyBlockTest()
