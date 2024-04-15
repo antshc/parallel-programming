@@ -10,9 +10,9 @@ public class PublishCoverArchiveActionBlock
     public PublishCoverArchiveActionBlock(IOutputLogger logger)
         => _logger = logger;
 
-    public void Transform(CoverArchive cover)
+    public async Task Transform(CoverArchive cover)
     {
         _logger.Log($"Pipeline=Main, ResourceId={cover.Id}: Publish");
-        Thread.Sleep(1000);
+        await Task.Delay(1000);
     }
 }

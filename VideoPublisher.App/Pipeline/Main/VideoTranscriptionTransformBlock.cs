@@ -11,10 +11,10 @@ public class VideoTranscriptionTransformBlock
     public VideoTranscriptionTransformBlock(IOutputLogger logger)
         => _logger = logger;
 
-    public VideoTranscription Transform(Video video)
+    public async Task<VideoTranscription> Transform(Video video)
     {
         _logger.Log($"Pipeline=Main, ResourceId={video.Id}: Transcript");
-        Thread.Sleep(1000);
+        await Task.Delay(1000);
         return new VideoTranscription(video.Id, new Faker().Lorem.Sentence(1000));
     }
 }
