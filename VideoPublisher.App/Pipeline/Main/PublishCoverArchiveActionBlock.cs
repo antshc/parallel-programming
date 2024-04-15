@@ -1,5 +1,4 @@
-﻿using Bogus;
-using Core.Logger;
+﻿using Core.Logger;
 using VideoPublisher.App.Models;
 
 namespace VideoPublisher.App.Pipeline.Main;
@@ -14,5 +13,6 @@ public class PublishCoverArchiveActionBlock
     public void Transform(CoverArchive cover)
     {
         _logger.Log($"Pipeline=Main, ResourceId={cover.Id}: Publish");
+        Thread.Sleep(1000);
     }
 }
