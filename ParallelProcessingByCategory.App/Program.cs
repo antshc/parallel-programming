@@ -12,85 +12,70 @@ public interface IJobPipeline<TQueueItem>
     void Post(TQueueItem item);
 }
 
-public class PlayWithAnimalsJobPipeline : IJobPipeline<QueueItem>
+public class PlayWithAnimalsJobPipeline : IJobPipeline<BatchQueueItem>
 {
     private static readonly object _lockObj = new object();
     private readonly HashSet<Category> highPriorityCategoryRegister = new HashSet<Category>();
     private readonly HashSet<Category> defaultPriorityCategoryRegister = new HashSet<Category>();
     private readonly HashSet<Priority> priorityRegister = new HashSet<Priority>();
-    private BufferBlock<QueueItem> _pipeline;
-    private BufferBlock<QueueItem> _defaultPriority;
-    private BufferBlock<QueueItem> _highPriority;
+    private BufferBlock<BatchQueueItem> _pipeline;
+    private BufferBlock<BatchQueueItem> _defaultPriority;
+    private BufferBlock<BatchQueueItem> _highPriority;
     private PlayWithAnimalsService _service;
 
     public PlayWithAnimalsJobPipeline(PlayWithAnimalsService service)
     {
-        _pipeline = new BufferBlock<QueueItem>();
-        _defaultPriority = new BufferBlock<QueueItem>();
-        _highPriority = new BufferBlock<QueueItem>();
+        _pipeline = new BufferBlock<BatchQueueItem>();
+        _defaultPriority = new BufferBlock<BatchQueueItem>();
+        _highPriority = new BufferBlock<BatchQueueItem>();
+        _pipeline.LinkTo(_highPriority, q => q.Priority == Priority.High);
+
+        Console.WriteLine($"Register priority: High");
+        _pipeline.LinkTo(_defaultPriority, q => q.Priority == Priority.Default);
+        Console.WriteLine($"Register priority: Default");
+
         _service = service;
     }
 
-    public void Post(QueueItem animal)
+    public void Post(BatchQueueItem batchAnimals)
     {
         lock (_lockObj)
         {
-            BuildDynamicPipeline(_pipeline, animal);
+            BuildDynamicPipeline(batchAnimals);
         }
 
-        _pipeline.Post(animal);
+        _pipeline.Post(batchAnimals);
     }
 
-    private void BuildDynamicPipeline(BufferBlock<QueueItem> pipeline, QueueItem animal)
+    private void BuildDynamicPipeline(BatchQueueItem batchAnimals)
     {
-        if (!priorityRegister.Contains(Priority.High))
+        if (!highPriorityCategoryRegister.Contains(batchAnimals.Category))
         {
-            pipeline.LinkTo(_highPriority, q => q.Priority == Priority.High);
-            priorityRegister.Add(Priority.High);
-            Console.WriteLine($"Register priority: High");
+            var categoryActionBlock = new ActionBlock<BatchQueueItem>(bqi => _service.Play(bqi.Category, bqi.Animals));
+            _highPriority.LinkTo(categoryActionBlock, it => it.Category == batchAnimals.Category);
+            highPriorityCategoryRegister.Add(batchAnimals.Category);
+            Console.WriteLine($"Register priority: High, Category: {batchAnimals.Category}");
         }
 
-        if (!priorityRegister.Contains(Priority.Default))
+        if (!defaultPriorityCategoryRegister.Contains(batchAnimals.Category))
         {
-            pipeline.LinkTo(_defaultPriority, q => q.Priority == Priority.Default);
-            priorityRegister.Add(Priority.Default);
-            Console.WriteLine($"Register priority: Default");
-        }
-
-        if (!highPriorityCategoryRegister.Contains(animal.Category))
-        {
-            //var batchBlock = new BatchBlock<QueueItem>(5);
-            var bufferBatchBlock = new BufferBatchBlockFactory<QueueItem>(5).Create();
-            _highPriority.LinkTo(bufferBatchBlock, it => it.Category == animal.Category);
-            var categoryActionBlock = new ActionBlock<QueueItem[]>(_service.Play);
-            bufferBatchBlock.LinkTo(categoryActionBlock);
-            highPriorityCategoryRegister.Add(animal.Category);
-            Console.WriteLine($"Register priority: High, Category: {animal.Category}");
-        }
-
-        if (!defaultPriorityCategoryRegister.Contains(animal.Category))
-        {
-            //var batchBlock = new BatchBlock<QueueItem>(5);
-            var bufferBatchBlock = new BufferBatchBlockFactory<QueueItem>(5).Create();
-            _defaultPriority.LinkTo(bufferBatchBlock, it => it.Category == animal.Category);
-            var categoryActionBlock = new ActionBlock<QueueItem[]>(_service.Play);
-            bufferBatchBlock.LinkTo(categoryActionBlock);
-            defaultPriorityCategoryRegister.Add(animal.Category);
-            Console.WriteLine($"Register priority: Default, Category: {animal.Category}");
+            var categoryActionBlock = new ActionBlock<BatchQueueItem>(bqi => _service.Play(bqi.Category, bqi.Animals));
+            _defaultPriority.LinkTo(categoryActionBlock, it => it.Category == batchAnimals.Category);
+            defaultPriorityCategoryRegister.Add(batchAnimals.Category);
+            Console.WriteLine($"Register priority: Default, Category: {batchAnimals.Category}");
         }
     }
 }
 
 public class PlayWithAnimalsService
 {
-    public Task Play(QueueItem[] animals)
+    public Task Play(Category category, IEnumerable<Animal> animals)
     {
-        if (animals.Length > 0)
+        if (animals.Count() > 0)
         {
-            Console.WriteLine($"Handle message from Category: {animals.First().Category}, Count: {animals.Length}");
+            Console.WriteLine($"Handle message from Category: {category}, Count: {animals.Count()}");
 
         }
-
 
         return Task.CompletedTask;
     }
@@ -174,7 +159,8 @@ public enum Category
 }
 
 public record QueueItem(Guid Id, Category Category, Priority Priority);
-public record BatchQueueItem(IEnumerable<QueueItem> QueueItems);
+public record Animal(Guid Id);
+public record BatchQueueItem(Category Category, Priority Priority, IEnumerable<Animal> Animals);
 
 public class Program
 {
@@ -189,14 +175,21 @@ public class Program
         Console.ReadLine();
     }
 
-    private static MessageReceiverSimulator CreateMessageSimulator(IJobPipeline<QueueItem> queue)
+    private static MessageReceiverSimulator CreateMessageSimulator(IJobPipeline<BatchQueueItem> queue)
     {
         MessageReceiverSimulator _receiptCreationSimulator = new MessageReceiverSimulator(500);
         _receiptCreationSimulator.Elapsed += (sender, e) =>
         {
-            var qi = new QueueItem(Guid.NewGuid(), new Faker().PickRandom<Category>(), new Faker().PickRandom<Priority>());
-            Console.WriteLine($"Post: {qi}");
-            queue.Post(qi);
+            var random = new Faker().Random.Int(1, 6);
+            var animals = Enumerable.Range(1, random)
+            .Select(i => new Animal(Guid.NewGuid())).ToList();
+            var bqi = new BatchQueueItem(
+                new Faker().PickRandom<Category>(),
+                new Faker().PickRandom<Priority>(),
+               animals);
+            Console.WriteLine($"Post: Priority: {bqi.Priority}, Category: {bqi.Category} ");
+
+            queue.Post(bqi);
         };
         return _receiptCreationSimulator;
     }
