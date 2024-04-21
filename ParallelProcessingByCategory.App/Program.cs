@@ -47,8 +47,6 @@ public class PlayWithAnimalsJobPipeline : IJobPipeline<QueueItem>
 
     private void BuildDynamicPipeline(QueueItem animal)
     {
-
-
         if (!highPriorityCategoryRegister.Contains(animal.Category))
         {
             lock (_lockObj)
