@@ -39,10 +39,9 @@ public class PlayWithAnimalsJobPipeline : IJobPipeline<BatchQueueItem>
 
     public void Post(BatchQueueItem batchAnimals)
     {
-        lock (_lockObj)
-        {
-            BuildDynamicPipeline(batchAnimals);
-        }
+
+        BuildDynamicPipeline(batchAnimals);
+
 
         _pipeline.Post(batchAnimals);
     }
@@ -51,18 +50,34 @@ public class PlayWithAnimalsJobPipeline : IJobPipeline<BatchQueueItem>
     {
         if (!highPriorityCategoryRegister.Contains(batchAnimals.Category))
         {
-            var categoryActionBlock = new ActionBlock<BatchQueueItem>(bqi => _service.Play(bqi.Category, bqi.Animals));
-            _highPriority.LinkTo(categoryActionBlock, it => it.Category == batchAnimals.Category);
-            highPriorityCategoryRegister.Add(batchAnimals.Category);
-            Console.WriteLine($"Register priority: High, Category: {batchAnimals.Category}");
+            lock (_lockObj)
+            {
+                if (highPriorityCategoryRegister.Contains(batchAnimals.Category))
+                {
+                    return;
+                }
+
+                var categoryActionBlock = new ActionBlock<BatchQueueItem>(bqi => _service.Play(bqi.Category, bqi.Animals));
+                _highPriority.LinkTo(categoryActionBlock, it => it.Category == batchAnimals.Category);
+                highPriorityCategoryRegister.Add(batchAnimals.Category);
+                Console.WriteLine($"Register priority: High, Category: {batchAnimals.Category}");
+            }
         }
 
         if (!defaultPriorityCategoryRegister.Contains(batchAnimals.Category))
         {
-            var categoryActionBlock = new ActionBlock<BatchQueueItem>(bqi => _service.Play(bqi.Category, bqi.Animals));
-            _defaultPriority.LinkTo(categoryActionBlock, it => it.Category == batchAnimals.Category);
-            defaultPriorityCategoryRegister.Add(batchAnimals.Category);
-            Console.WriteLine($"Register priority: Default, Category: {batchAnimals.Category}");
+            lock (_lockObj)
+            {
+                if (defaultPriorityCategoryRegister.Contains(batchAnimals.Category))
+                {
+                    return;
+                }
+
+                var categoryActionBlock = new ActionBlock<BatchQueueItem>(bqi => _service.Play(bqi.Category, bqi.Animals));
+                _defaultPriority.LinkTo(categoryActionBlock, it => it.Category == batchAnimals.Category);
+                defaultPriorityCategoryRegister.Add(batchAnimals.Category);
+                Console.WriteLine($"Register priority: Default, Category: {batchAnimals.Category}");
+            }
         }
     }
 }
