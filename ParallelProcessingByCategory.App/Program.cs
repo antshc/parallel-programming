@@ -1,6 +1,7 @@
 ﻿using Bogus;
 using Core.Logger;
 using Core.Simulators;
+using System;
 using System.Collections.Concurrent;
 using System.Threading.Tasks.Dataflow;
 using System.Timers;
@@ -28,55 +29,60 @@ public class PlayWithAnimalsJobPipeline : IJobPipeline<QueueItem>
         _pipeline = new BufferBlock<QueueItem>();
         _defaultPriority = new BufferBlock<QueueItem>();
         _highPriority = new BufferBlock<QueueItem>();
+        _pipeline.LinkTo(_highPriority, q => q.Priority == Priority.High);
+        Console.WriteLine($"Register priority: High");
+        _pipeline.LinkTo(_defaultPriority, q => q.Priority == Priority.Default);
+        Console.WriteLine($"Register priority: Default");
         _service = service;
     }
 
     public void Post(QueueItem animal)
     {
-        lock (_lockObj)
-        {
-            BuildDynamicPipeline(_pipeline, animal);
-        }
+
+        BuildDynamicPipeline(animal);
+
 
         _pipeline.Post(animal);
     }
 
-    private void BuildDynamicPipeline(BufferBlock<QueueItem> pipeline, QueueItem animal)
+    private void BuildDynamicPipeline(QueueItem animal)
     {
-        if (!priorityRegister.Contains(Priority.High))
-        {
-            pipeline.LinkTo(_highPriority, q => q.Priority == Priority.High);
-            priorityRegister.Add(Priority.High);
-            Console.WriteLine($"Register priority: High");
-        }
 
-        if (!priorityRegister.Contains(Priority.Default))
-        {
-            pipeline.LinkTo(_defaultPriority, q => q.Priority == Priority.Default);
-            priorityRegister.Add(Priority.Default);
-            Console.WriteLine($"Register priority: Default");
-        }
 
         if (!highPriorityCategoryRegister.Contains(animal.Category))
         {
-            //var batchBlock = new BatchBlock<QueueItem>(5);
-            var bufferBatchBlock = new BufferBatchBlockFactory<QueueItem>(5).Create();
-            _highPriority.LinkTo(bufferBatchBlock, it => it.Category == animal.Category);
-            var categoryActionBlock = new ActionBlock<QueueItem[]>(_service.Play);
-            bufferBatchBlock.LinkTo(categoryActionBlock);
-            highPriorityCategoryRegister.Add(animal.Category);
-            Console.WriteLine($"Register priority: High, Category: {animal.Category}");
+            lock (_lockObj)
+            {
+                if (highPriorityCategoryRegister.Contains(animal.Category))
+                {
+                    return;
+                }
+
+                var bufferBatchBlock = new BufferBatchBlockFactory<QueueItem>(5).Create();
+                _highPriority.LinkTo(bufferBatchBlock, it => it.Category == animal.Category);
+                var categoryActionBlock = new ActionBlock<QueueItem[]>(_service.Play);
+                bufferBatchBlock.LinkTo(categoryActionBlock);
+                highPriorityCategoryRegister.Add(animal.Category);
+                Console.WriteLine($"Register priority: High, Category: {animal.Category}");
+            }
         }
 
         if (!defaultPriorityCategoryRegister.Contains(animal.Category))
         {
-            //var batchBlock = new BatchBlock<QueueItem>(5);
-            var bufferBatchBlock = new BufferBatchBlockFactory<QueueItem>(5).Create();
-            _defaultPriority.LinkTo(bufferBatchBlock, it => it.Category == animal.Category);
-            var categoryActionBlock = new ActionBlock<QueueItem[]>(_service.Play);
-            bufferBatchBlock.LinkTo(categoryActionBlock);
-            defaultPriorityCategoryRegister.Add(animal.Category);
-            Console.WriteLine($"Register priority: Default, Category: {animal.Category}");
+            lock (_lockObj)
+            {
+                if (defaultPriorityCategoryRegister.Contains(animal.Category))
+                {
+                    return;
+                }
+
+                var bufferBatchBlock = new BufferBatchBlockFactory<QueueItem>(5).Create();
+                _defaultPriority.LinkTo(bufferBatchBlock, it => it.Category == animal.Category);
+                var categoryActionBlock = new ActionBlock<QueueItem[]>(_service.Play);
+                bufferBatchBlock.LinkTo(categoryActionBlock);
+                defaultPriorityCategoryRegister.Add(animal.Category);
+                Console.WriteLine($"Register priority: Default, Category: {animal.Category}");
+            }
         }
     }
 }
@@ -88,19 +94,17 @@ public class PlayWithAnimalsService
         if (animals.Length > 0)
         {
             Console.WriteLine($"Handle message from Category: {animals.First().Category}, Count: {animals.Length}");
-
         }
-
 
         return Task.CompletedTask;
     }
 }
 
-public class BufferBatchBlockFactory<T>
+public class BufferBatchBlockFactory<T> : IDisposable
 {
     private readonly ConcurrentQueue<T> _buffer;
     private readonly BufferBlock<T[]> _source;
-    private readonly System.Timers.Timer _timer;
+    private System.Timers.Timer _timer;
     private readonly int size;
 
     public BufferBatchBlockFactory(int size)
@@ -110,11 +114,15 @@ public class BufferBatchBlockFactory<T>
         // The source part of the propagator holds arrays of size windowSize
         // and propagates data out to any connected targets.
         _source = new BufferBlock<T[]>();
-
-        _timer = new System.Timers.Timer(2000);
-        _timer.Elapsed += TimerElapsed;
-        _timer.AutoReset = true;
+        ResetTimer();
         this.size = size;
+    }
+
+    private void ResetTimer()
+    {
+        _timer = new System.Timers.Timer(1000);
+        _timer.Elapsed += TimerElapsed;
+        _timer.AutoReset = false;
         _timer.Start();
     }
 
@@ -123,13 +131,17 @@ public class BufferBatchBlockFactory<T>
         // The target part receives data and adds them to the queue.
         var target = new ActionBlock<T>(item =>
         {
-            // Add the item to the queue.
-            _buffer.Enqueue(item);
-
             // Post the data in the queue to the source block when the queue size
             // equals the window size.
             if (_buffer.Count == size)
+            {
                 _source.Post(_buffer.ToArray());
+                _buffer.Clear();
+                ResetTimer();
+            }
+
+            // Add the item to the queue.
+            _buffer.Enqueue(item);
         });
 
         // When the target is set to the completed state, propagate out any
@@ -150,6 +162,7 @@ public class BufferBatchBlockFactory<T>
     {
         if (_buffer.Count > 0)
         {
+            Console.WriteLine("TimerElapsed");
             _source.Post(_buffer.ToArray());
         }
     }
@@ -191,7 +204,7 @@ public class Program
 
     private static MessageReceiverSimulator CreateMessageSimulator(IJobPipeline<QueueItem> queue)
     {
-        MessageReceiverSimulator _receiptCreationSimulator = new MessageReceiverSimulator(500);
+        MessageReceiverSimulator _receiptCreationSimulator = new MessageReceiverSimulator(250);
         _receiptCreationSimulator.Elapsed += (sender, e) =>
         {
             var qi = new QueueItem(Guid.NewGuid(), new Faker().PickRandom<Category>(), new Faker().PickRandom<Priority>());
