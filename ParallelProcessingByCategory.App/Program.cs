@@ -1,7 +1,9 @@
 ﻿using Bogus;
 using Core.Logger;
 using Core.Simulators;
+using System.Collections.Concurrent;
 using System.Threading.Tasks.Dataflow;
+using System.Timers;
 
 namespace ParallelProcessingByCategory.App;
 
@@ -57,20 +59,22 @@ public class PlayWithAnimalsJobPipeline : IJobPipeline<QueueItem>
 
         if (!highPriorityCategoryRegister.Contains(animal.Category))
         {
-            var batchBlock = new BatchBlock<QueueItem>(5);
-            _highPriority.LinkTo(batchBlock, it => it.Category == animal.Category);
+            //var batchBlock = new BatchBlock<QueueItem>(5);
+            var bufferBatchBlock = new BufferBatchBlockFactory<QueueItem>(5).Create();
+            _highPriority.LinkTo(bufferBatchBlock, it => it.Category == animal.Category);
             var categoryActionBlock = new ActionBlock<QueueItem[]>(_service.Play);
-            batchBlock.LinkTo(categoryActionBlock);
+            bufferBatchBlock.LinkTo(categoryActionBlock);
             highPriorityCategoryRegister.Add(animal.Category);
             Console.WriteLine($"Register priority: High, Category: {animal.Category}");
         }
 
         if (!defaultPriorityCategoryRegister.Contains(animal.Category))
         {
-            var batchBlock = new BatchBlock<QueueItem>(5);
-            _defaultPriority.LinkTo(batchBlock, it => it.Category == animal.Category);
+            //var batchBlock = new BatchBlock<QueueItem>(5);
+            var bufferBatchBlock = new BufferBatchBlockFactory<QueueItem>(5).Create();
+            _defaultPriority.LinkTo(bufferBatchBlock, it => it.Category == animal.Category);
             var categoryActionBlock = new ActionBlock<QueueItem[]>(_service.Play);
-            batchBlock.LinkTo(categoryActionBlock);
+            bufferBatchBlock.LinkTo(categoryActionBlock);
             defaultPriorityCategoryRegister.Add(animal.Category);
             Console.WriteLine($"Register priority: Default, Category: {animal.Category}");
         }
@@ -81,12 +85,78 @@ public class PlayWithAnimalsService
 {
     public Task Play(QueueItem[] animals)
     {
-        foreach (var animal in animals)
+        if (animals.Length > 0)
         {
-            Console.WriteLine($"Handle message from Category: {animal.Category}, Id: {animal.Id}");
+            Console.WriteLine($"Handle message from Category: {animals.First().Category}, Count: {animals.Length}");
+
         }
 
+
         return Task.CompletedTask;
+    }
+}
+
+public class BufferBatchBlockFactory<T>
+{
+    private readonly ConcurrentQueue<T> _buffer;
+    private readonly BufferBlock<T[]> _source;
+    private readonly System.Timers.Timer _timer;
+    private readonly int size;
+
+    public BufferBatchBlockFactory(int size)
+    {
+        // Create a queue to hold messages.
+        _buffer = new ConcurrentQueue<T>();
+        // The source part of the propagator holds arrays of size windowSize
+        // and propagates data out to any connected targets.
+        _source = new BufferBlock<T[]>();
+
+        _timer = new System.Timers.Timer(2000);
+        _timer.Elapsed += TimerElapsed;
+        _timer.AutoReset = true;
+        this.size = size;
+        _timer.Start();
+    }
+
+    public IPropagatorBlock<T, T[]> Create()
+    {
+        // The target part receives data and adds them to the queue.
+        var target = new ActionBlock<T>(item =>
+        {
+            // Add the item to the queue.
+            _buffer.Enqueue(item);
+
+            // Post the data in the queue to the source block when the queue size
+            // equals the window size.
+            if (_buffer.Count == size)
+                _source.Post(_buffer.ToArray());
+        });
+
+        // When the target is set to the completed state, propagate out any
+        // remaining data and set the source to the completed state.
+        target.Completion.ContinueWith(delegate
+        {
+            if (_buffer.Count > 0 && _buffer.Count < size)
+                _source.Post(_buffer.ToArray());
+            _source.Complete();
+        });
+
+        // Return a IPropagatorBlock<T, T[]> object that encapsulates the
+        // target and source blocks.
+        return DataflowBlock.Encapsulate(target, _source);
+    }
+
+    private void TimerElapsed(object sender, ElapsedEventArgs e)
+    {
+        if (_buffer.Count > 0)
+        {
+            _source.Post(_buffer.ToArray());
+        }
+    }
+
+    public void Dispose()
+    {
+        _timer.Elapsed -= TimerElapsed;
     }
 }
 
@@ -119,19 +189,9 @@ public class Program
         Console.ReadLine();
     }
 
-    private static ActionBlock<QueueItem> CreateAnimalCategoryPipeline(ConsoleOutputLogger _output, DataflowLinkOptions linkOptions)
-    {
-        var animalHandlerBlock = new ActionBlock<QueueItem>((animal) =>
-          {
-              Thread.Sleep(1000);
-              _output.Log($"Handle message from Category: {animal.Category}, Id: {animal.Id}");
-          });
-        return animalHandlerBlock;
-    }
-
     private static MessageReceiverSimulator CreateMessageSimulator(IJobPipeline<QueueItem> queue)
     {
-        MessageReceiverSimulator _receiptCreationSimulator = new MessageReceiverSimulator(2000);
+        MessageReceiverSimulator _receiptCreationSimulator = new MessageReceiverSimulator(500);
         _receiptCreationSimulator.Elapsed += (sender, e) =>
         {
             var qi = new QueueItem(Guid.NewGuid(), new Faker().PickRandom<Category>(), new Faker().PickRandom<Priority>());
