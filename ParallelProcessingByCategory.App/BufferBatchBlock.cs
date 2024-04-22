@@ -2,13 +2,9 @@ using System.Threading.Tasks.Dataflow;
 using System.Timers;
 
 namespace ParallelProcessingByCategory.App;
-
 public class BufferBatchBlock<T> : IPropagatorBlock<T, T[]>,
     IReceivableSourceBlock<T[]>
 {
-    // The size of the window.
-    private readonly int m_windowSize;
-
     // The target part of the block.
     private readonly ITargetBlock<T> m_target;
 
@@ -60,29 +56,8 @@ public class BufferBatchBlock<T> : IPropagatorBlock<T, T[]>,
             source.Complete();
         });
 
-        m_windowSize = size;
         m_target = target;
         m_source = source;
-    }
-
-    private static System.Timers.Timer CreateTimer(BufferBlock<T[]> source, Queue<T> queue, int interval = 5000)
-    {
-        var timer = new System.Timers.Timer(interval);
-        timer.Elapsed += (object sender, ElapsedEventArgs e) =>
-        {
-            Console.WriteLine($"Timer elapsed queue: {queue.Count}");
-            source.Post(queue.ToArray());
-            queue.Clear();
-        };
-        timer.AutoReset = false;
-        timer.Enabled = true;
-        return timer;
-    }
-
-    // Retrieves the size of the window.
-    public int WindowSize
-    {
-        get { return m_windowSize; }
     }
 
     #region IReceivableSourceBlock<TOutput> members
