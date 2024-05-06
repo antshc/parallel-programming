@@ -1,3 +1,15 @@
+# A comprehensive course teaching you how to write asynchronous C# code with the Task Parallel Library and PLINQ.
+[Course](https://ciklum.udemy.com/course/write-asynchronous-csharp-code-with-task-parallel-library-and-plinq/learn/lecture/3699912#overview)
+* Run long running task not in thread pool, use LongRunning enum parameter for that.
+* You can use state task argument, it values displays in the debbuger
+* Use task to handle up to 10k unit of works, where you do not need to do map reduce operations. 
+* Parralle library has optimization that helps to handle millions of unit of works using thousands of tasks. 
+* Plinq does the same as parrallel library but also has automatic map, reduce methods .
+* Plinq doesn't preserve the order of the items.
+* Use AsOrdered  method to have items in preserve order.
+
+
+
 # Dataflow areas of using
 ## Sensor data processing
 Let's consider a scenario where you have a stream of sensor data coming from multiple devices, and you need to process and analyze this data in real-time. 
