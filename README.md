@@ -1,6 +1,7 @@
 # A comprehensive course teaching you how to write asynchronous C# code with the Task Parallel Library and PLINQ.
 [Course](https://ciklum.udemy.com/course/write-asynchronous-csharp-code-with-task-parallel-library-and-plinq/learn/lecture/3699912#overview)
 * Run long running task not in thread pool, use LongRunning enum parameter for that. (TaskCreationOptions.LongRunning can force the creation of a dedicated thread instead of using the ThreadPool.)
+* Task.Run is best for CPU-bound tasks, while async/await is better for I/O-bound tasks.
 * You can use state task argument, it values displays in the debbuger
 * Use task to handle up to 10k unit of works, where you do not need to do map reduce operations. 
 * Parralle library has optimization that helps to handle millions of unit of works using thousands of tasks. 
